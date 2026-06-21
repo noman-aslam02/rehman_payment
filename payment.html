@@ -1214,6 +1214,41 @@
       el.className = 'payment-status' + (isError ? ' error' : '');
     }
 
+    // ── Send email BEFORE redirect ─────────────────────────────
+    async function sendEmailBeforeRedirect(paymentData) {
+      console.log('📤 Sending email notification before redirect:', paymentData);
+
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => {
+          console.warn('⏱️ Email send timeout after 30s');
+          controller.abort();
+        }, 30000);
+
+        const response = await fetch('send-email.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify(paymentData),
+        });
+
+        clearTimeout(timeout);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ Email API error:', response.status, errorText);
+          return { success: false, error: `HTTP ${response.status}` };
+        }
+
+        const result = await response.json();
+        console.log('📨 Email result:', result);
+        return result;
+      } catch (err) {
+        console.error('❌ Email send failed:', err);
+        return { success: false, error: err.message };
+      }
+    }
+
     // ── Pay ───────────────────────────────────────────────────
     async function handlePay() {
       const data = collectData();
@@ -1229,6 +1264,7 @@
       try {
         const chargeAmount = data.totalAmount.toFixed(2);
 
+        // ── Step 1: Get payment URL from API ──────────────────
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1246,12 +1282,12 @@
         const json = await res.json();
 
         if (json.web_url) {
-          // Save form data to send email upon successful return
+          // ── Step 2: Generate transaction ID ─────────────────
           const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
           let txnId = 'OS-';
           for (let i = 0; i < 12; i++) txnId += chars[Math.floor(Math.random() * chars.length)];
 
-          localStorage.setItem('os_pending_payment', JSON.stringify({
+          const emailData = {
             name: data.name,
             phone: data.phone,
             email: data.email,
@@ -1260,10 +1296,38 @@
             amount: chargeAmount,
             paymentMethod: data.payment_method,
             transactionId: txnId
-          }));
+          };
 
+          // Save to localStorage as backup
+          localStorage.setItem('os_pending_payment', JSON.stringify(emailData));
+
+          // ── Step 3: Send email BEFORE redirect ──────────────
+          console.log('📧 Sending admin email before redirecting...');
+          document.getElementById('processingTitle').textContent = 'جاري إرسال تأكيد الطلب...';
+
+          let emailResult = null;
+          const maxRetries = 2;
+          for (let attempt = 0; attempt < maxRetries; attempt++) {
+            emailResult = await sendEmailBeforeRedirect(emailData);
+            if (emailResult && emailResult.success) break;
+            if (attempt < maxRetries - 1) {
+              console.log(`🔄 Email retry ${attempt + 1}...`);
+              await new Promise(r => setTimeout(r, 1500));
+            }
+          }
+
+          if (emailResult && emailResult.success) {
+            console.log('✅ Email sent successfully! Redirecting to payment...');
+            localStorage.setItem('os_payment_email_sent', 'true');
+          } else {
+            console.warn('⚠️ Email failed but proceeding to payment anyway');
+            // Still redirect - payment is more important
+          }
+
+          // ── Step 4: Now redirect to payment gateway ─────────
           console.log('✅ Redirecting to payment gateway:', json.web_url);
           window.location.href = json.web_url;
+
         } else if (json.test_mode) {
           closeLoader();
           console.log('🐞 [DEBUG] Test mode detected. Form parameters:', {
@@ -1330,7 +1394,7 @@
       const el = document.getElementById('redirectNotice');
       el.style.cssText = `display:flex;background:${s.bg};border:1px solid ${s.border};color:${s.color};`;
       el.innerHTML = `<i class="fa-solid ${s.icon}" style="flex-shrink:0;margin-top:2px;"></i><span>${s.text}</span>`;
-      window.history.replaceState({}, '', window.location.pathname);
+      // Note: don't replaceState here — the second handleReturn script below needs the status param
     })();
   </script>
 
@@ -1374,7 +1438,7 @@
       const configs = {
         success: {
           title: '✅ تم الدفع بنجاح!',
-          message: 'شكراً لك! سيتم إرسال تأكيد الدفع إلى بريدك الإلكتروني قريباً.',
+          message: 'شكراً لك! تم إرسال تأكيد الدفع إلى بريدك الإلكتروني.',
           type: 'success'
         },
         cancelled: {
@@ -1397,73 +1461,47 @@
         showToast(cfg.title, cfg.message, cfg.type);
       }, 500);
 
-      // If successful payment, send the confirmation emails
+      // Email is already sent BEFORE redirect in handlePay() now.
+      // No need to send again here to avoid duplicates.
       if (status === 'success') {
-        const pendingStr = localStorage.getItem('os_pending_payment');
-        console.log('🔍 Pending payment data from localStorage:', pendingStr);
-
-        if (pendingStr) {
-          try {
-            const paymentData = JSON.parse(pendingStr);
-
-            // Add transaction ID if not present
-            if (!paymentData.transactionId) {
-              const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-              let txnId = 'OS-';
-              for (let i = 0; i < 12; i++) txnId += chars[Math.floor(Math.random() * chars.length)];
-              paymentData.transactionId = txnId;
-            }
-
-            console.log('📤 Sending payment data to send-email.php:', paymentData);
-
-            // Actually send the email notification
-            fetch('send-email.php', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(paymentData)
-            })
-            .then(r => r.json())
-            .then(result => {
-              if (result.success) {
-                console.log('✅ Confirmation emails sent successfully!');
-              } else {
-                console.error('❌ Email sending failed:', result);
-              }
-            })
-            .catch(err => console.error('❌ fetch send-email.php error:', err));
-
-            // Mark as sent and clean up
-            localStorage.setItem('os_pending_payment_sent', JSON.stringify({
-              ...paymentData,
-              sentAt: new Date().toISOString()
-            }));
-            localStorage.removeItem('os_pending_payment');
-
-          } catch (err) {
-            console.error('❌ Error parsing payment data:', err);
-          }
+        const wasSent = localStorage.getItem('os_payment_email_sent');
+        if (wasSent === 'true') {
+          console.log('✅ Email was already sent before redirect. No duplicate needed.');
+          localStorage.removeItem('os_payment_email_sent');
         } else {
-          console.warn('⚠️ No pending payment data found in localStorage');
+          // Fallback: if email wasn't sent before redirect (e.g. timeout), try now
+          const pendingStr = localStorage.getItem('os_pending_payment');
+          console.log('⚠️ Email not confirmed sent before redirect. Trying fallback...', pendingStr);
 
-          // Try to get data from URL params as fallback
-          const params = new URLSearchParams(window.location.search);
-          const fallbackData = {
-            name: params.get('name') || 'N/A',
-            phone: params.get('phone') || 'N/A',
-            email: params.get('email') || 'N/A',
-            service: params.get('service') || 'N/A',
-            amount: params.get('amount') || '0.00',
-            paymentMethod: params.get('method') || 'card',
-          };
+          if (pendingStr) {
+            try {
+              const paymentData = JSON.parse(pendingStr);
+              if (!paymentData.transactionId) {
+                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+                let txnId = 'OS-';
+                for (let i = 0; i < 12; i++) txnId += chars[Math.floor(Math.random() * chars.length)];
+                paymentData.transactionId = txnId;
+              }
 
-          if (fallbackData.name !== 'N/A') {
-            console.log('📤 Using fallback data from URL:', fallbackData);
-            // Try to send with fallback data
-            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-            let txnId = 'OS-';
-            for (let i = 0; i < 12; i++) txnId += chars[Math.floor(Math.random() * chars.length)];
+              fetch('send-email.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(paymentData)
+              })
+              .then(r => r.json())
+              .then(result => {
+                if (result.success) {
+                  console.log('✅ Fallback email sent successfully!');
+                } else {
+                  console.error('❌ Fallback email failed:', result);
+                }
+              })
+              .catch(err => console.error('❌ Fallback email error:', err));
 
-            console.log('ℹ️ Fallback email notification skipped (already sent from backend).');
+              localStorage.removeItem('os_pending_payment');
+            } catch (err) {
+              console.error('❌ Error parsing fallback payment data:', err);
+            }
           }
         }
       }
