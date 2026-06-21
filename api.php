@@ -134,6 +134,20 @@ function httpRequest($url, $method, $headers, $body = null) {
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     
+    // Set timeout to prevent hanging
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+    
+    // Follow redirects
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
+    
+    // Set DNS servers explicitly (Google DNS) to fix "Could not resolve host" error
+    curl_setopt($ch, CURLOPT_DNS_SERVERS, "8.8.8.8,8.8.4.4");
+    
+    // Enable IPv4 only to prevent IPv6 resolution issues
+    curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+    
     // Bypass SSL certificate verification on localhost to prevent "unable to get local issuer certificate" errors on local servers (like XAMPP)
     $host = $_SERVER['HTTP_HOST'] ?? '';
     if (strpos($host, 'localhost') !== false || strpos($host, '127.0.0.1') !== false) {
@@ -154,12 +168,20 @@ function httpRequest($url, $method, $headers, $body = null) {
     $response = curl_exec($ch);
     $err = curl_error($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlInfo = curl_getinfo($ch);
     curl_close($ch);
+    
+    // Enhanced error logging
+    if ($err) {
+        error_log("cURL Error for $url: $err");
+        error_log("cURL Info: " . print_r($curlInfo, true));
+    }
     
     return [
         'code' => $httpCode,
         'data' => json_decode($response, true) ?: [],
-        'error' => $err
+        'error' => $err,
+        'raw_response' => $response
     ];
 }
 
