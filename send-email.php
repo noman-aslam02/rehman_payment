@@ -1,6 +1,4 @@
 <?php
-// Error reporting: log internally, never display in output (this file's output gets
-// embedded in api.php's JSON response — display_errors=1 would corrupt that JSON)
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
@@ -28,21 +26,20 @@ if (file_exists($envPath)) {
 }
 
 // ── CONFIGURATION ────────────────────────────────────────────
-$SMTP_HOST     = $_ENV['SMTP_HOST'] ?? 'smtp.gmail.com';
-$SMTP_USER     = $_ENV['SMTP_USER'] ?? 'nomanaslam390@gmail.com';
-$SMTP_PASS     = $_ENV['SMTP_PASS'] ?? 'yewc nerl mrku gyxo';
-$SMTP_PORT     = isset($_ENV['SMTP_PORT']) ? (int)$_ENV['SMTP_PORT'] : 587;
-$SMTP_SECURE   = $_ENV['SMTP_SECURE'] ?? 'tls';
-$SITE_OWNER    = $SMTP_USER; // Always send to the SMTP_USER address dynamically
+$SMTP_HOST   = $_ENV['SMTP_HOST']   ?? 'smtp.gmail.com';
+$SMTP_USER   = $_ENV['SMTP_USER']   ?? 'Overseastravel.contact@gmail.com';
+$SMTP_PASS   = $_ENV['SMTP_PASS']   ?? 'espj vgla vcez neks';
+$SMTP_PORT   = isset($_ENV['SMTP_PORT']) ? (int)$_ENV['SMTP_PORT'] : 587;
+$SMTP_SECURE = $_ENV['SMTP_SECURE'] ?? 'tls';
+$SITE_OWNER  = $SMTP_USER;
 // ─────────────────────────────────────────────────────────────
 
 function sendNotificationEmails($data) {
     global $SMTP_HOST, $SMTP_USER, $SMTP_PASS, $SMTP_PORT, $SMTP_SECURE, $SITE_OWNER;
-    
-    // Log the incoming request
+
     $logFile = __DIR__ . '/email_debug.log';
-    file_put_contents($logFile, date('Y-m-d H:i:s') . " - Received data for processing: " . json_encode($data) . "\n", FILE_APPEND);
-    
+    file_put_contents($logFile, date('Y-m-d H:i:s') . " - Received data: " . json_encode($data) . "\n", FILE_APPEND);
+
     $required = ['name', 'phone', 'email', 'service', 'amount', 'transactionId', 'paymentMethod'];
     foreach ($required as $field) {
         if (!isset($data[$field])) {
@@ -51,340 +48,552 @@ function sendNotificationEmails($data) {
         }
     }
 
-$methodNames = [
-    'card' => 'بطاقة ائتمان / دفع سريع',
-    'installments' => 'تقسيط تابي',
-    'apple_pay' => 'Apple Pay',
-    'google_pay' => 'Google Pay',
-];
-$paymentMethod = $data['paymentMethod'];
-$methodName = isset($methodNames[$paymentMethod]) ? $methodNames[$paymentMethod] : $paymentMethod;
+    $methodNames = [
+        'card'         => 'Credit Card / Quick Pay',
+        'installments' => 'Tabby Installments',
+        'apple_pay'    => 'Apple Pay',
+        'google_pay'   => 'Google Pay',
+    ];
+    $paymentMethod = $data['paymentMethod'];
+    $methodName    = $methodNames[$paymentMethod] ?? $paymentMethod;
 
-$serviceDisplay = $data['service'] === 'inquiry' ? 'استفسار أو خدمة مخصصة' : $data['service'];
+    $serviceDisplay = $data['service'] === 'inquiry' ? 'Custom Inquiry / Service' : $data['service'];
 
-$inquiryHtml = '';
-$inquiryText = '';
-if ($data['service'] === 'inquiry' && !empty($data['inquiryMessage'])) {
-    $inquiryMessage = htmlspecialchars($data['inquiryMessage']);
-    $inquiryHtml = "
-    <div class='inquiry-box'>
-        <div class='label'>📝 تفاصيل الاستفسار / الخدمة المخصصة</div>
-        <div class='message'>$inquiryMessage</div>
-    </div>";
-    $inquiryText = "تفاصيل الاستفسار: {$data['inquiryMessage']}\n";
-}
+    $inquiryHtml = '';
+    $inquiryText = '';
+    if ($data['service'] === 'inquiry' && !empty($data['inquiryMessage'])) {
+        $inquiryMessage = htmlspecialchars($data['inquiryMessage']);
+        $inquiryHtml = "
+        <div class='inquiry-box'>
+            <div class='inquiry-label'>📝 Inquiry / Custom Service Details</div>
+            <div class='inquiry-message'>$inquiryMessage</div>
+        </div>";
+        $inquiryText = "Inquiry Details: {$data['inquiryMessage']}\n";
+    }
 
-$amount = htmlspecialchars($data['amount']);
-$transactionId = htmlspecialchars($data['transactionId']);
-$name = htmlspecialchars($data['name']);
-$phone = htmlspecialchars($data['phone']);
-$email = htmlspecialchars($data['email']);
-$userEmail = $data['email'];
-$dateNow = date('Y-m-d H:i:s');
+    $amount        = htmlspecialchars($data['amount']);
+    $transactionId = htmlspecialchars($data['transactionId']);
+    $name          = htmlspecialchars($data['name']);
+    $phone         = htmlspecialchars($data['phone']);
+    $email         = htmlspecialchars($data['email']);
+    $userEmail     = $data['email'];
+    $dateNow       = date('Y-m-d H:i:s');
 
-file_put_contents($logFile, date('Y-m-d H:i:s') . " - Processing payment: $transactionId for $name\n", FILE_APPEND);
+    file_put_contents($logFile, date('Y-m-d H:i:s') . " - Processing payment: $transactionId for $name\n", FILE_APPEND);
 
-// ══════════════════════════════════════════════════════════════
-// COMMON STYLES (shared between both email templates)
-// ══════════════════════════════════════════════════════════════
-$commonStyles = <<<CSS
-body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f5f5f5; padding: 20px; direction: rtl; margin: 0; }
-.container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 16px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
-.header { text-align: center; border-bottom: 2px solid #4BFDB3; padding-bottom: 20px; margin-bottom: 24px; }
-.header h1 { color: #0a0a0a; font-size: 22px; margin: 0; }
-.header .sub { color: #666; font-size: 14px; margin: 4px 0 0; }
-.detail-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
-.detail-row:last-child { border-bottom: none; }
-.detail-label { color: #555; font-weight: 600; }
-.detail-value { color: #0a0a0a; font-weight: 500; }
-.total-row { background: #f8f9fa; margin: 12px -30px -30px; padding: 16px 30px; border-radius: 0 0 16px 16px; }
-.total-row .detail-value { color: #22c55e; font-size: 18px; }
-.status-badge { display: inline-block; background: #4ade80; color: #0a0a0a; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; }
-.inquiry-box { background: #f0f7ff; border-radius: 8px; padding: 14px; margin: 12px 0; border-right: 4px solid #4BFDB3; }
-.inquiry-box .label { font-size: 12px; color: #666; font-weight: 600; }
-.inquiry-box .message { margin: 4px 0 0; color: #0a0a0a; }
-.footer { text-align: center; margin-top: 20px; font-size: 12px; color: #999; }
-.footer a { color: #4BFDB3; text-decoration: none; }
-.customer-info { background: #f0fdf4; border-radius: 12px; padding: 16px; margin: 16px 0; border: 1px solid #bbf7d0; }
-.customer-info-title { font-size: 13px; font-weight: 700; color: #166534; margin-bottom: 10px; }
-.customer-info .detail-row { border-bottom: 1px solid #dcfce7; }
-.customer-info .detail-row:last-child { border-bottom: none; }
+    // ══════════════════════════════════════════════════════════════
+    // COMMON STYLES — LTR English layout
+    // ══════════════════════════════════════════════════════════════
+    $commonStyles = <<<CSS
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+            background: #eef0f3;
+            padding: 30px 16px;
+            direction: ltr;
+            margin: 0;
+            color: #111827;
+        }
+        .wrapper {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .container {
+            background: #ffffff;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.09);
+        }
+        /* ── Header ── */
+        .header {
+            background: #0a0a0a;
+            text-align: center;
+            padding: 26px 30px 22px;
+            border-bottom: 3px solid #4BFDB3;
+        }
+        .header h1 {
+            color: #ffffff;
+            font-size: 20px;
+            margin: 0 0 5px;
+            letter-spacing: 0.3px;
+        }
+        .header .sub {
+            color: #9ca3af;
+            font-size: 13px;
+            margin: 0;
+        }
+        /* ── Body ── */
+        .body-content {
+            padding: 26px 28px 28px;
+        }
+        /* ── Section Label ── */
+        .section-title {
+            font-size: 10.5px;
+            font-weight: 700;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 0 0 10px;
+            padding-bottom: 7px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .section {
+            margin-bottom: 22px;
+        }
+        /* ── Detail Rows — TABLE layout for perfect alignment ── */
+        .detail-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .detail-table td {
+            padding: 9px 0;
+            border-bottom: 1px solid #f3f4f6;
+            vertical-align: middle;
+            font-size: 13.5px;
+        }
+        .detail-table tr:last-child td {
+            border-bottom: none;
+        }
+        .detail-table .col-label {
+            color: #6b7280;
+            font-weight: 500;
+            white-space: nowrap;
+            width: 40%;
+            padding-right: 24px;
+        }
+        .detail-table .col-value {
+            color: #111827;
+            font-weight: 600;
+        }
+        /* ── Customer Block ── */
+        .customer-block {
+            background: #f8fffe;
+            border: 1px solid #c6f6e8;
+            border-radius: 12px;
+            padding: 16px 18px;
+            margin-bottom: 22px;
+        }
+        .customer-block-title {
+            font-size: 10.5px;
+            font-weight: 700;
+            color: #047857;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            margin: 0 0 12px;
+        }
+        .customer-block .detail-table td {
+            border-bottom-color: #d1fae5;
+        }
+        /* ── Transaction ID ── */
+        .txn-value {
+            color: #059669 !important;
+            font-family: 'Courier New', monospace;
+            font-size: 12.5px !important;
+            letter-spacing: 0.5px;
+        }
+        /* ── Status Badge ── */
+        .status-badge {
+            display: inline-block;
+            background: #dcfce7;
+            color: #166534;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        /* ── Inquiry Box ── */
+        .inquiry-box {
+            background: #f0f7ff;
+            border-radius: 10px;
+            padding: 13px 15px;
+            margin: 6px 0;
+            border-left: 4px solid #4BFDB3;
+        }
+        .inquiry-label {
+            font-size: 10.5px;
+            color: #6b7280;
+            font-weight: 700;
+            margin-bottom: 5px;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+        }
+        .inquiry-message {
+            color: #111827;
+            font-size: 13.5px;
+            line-height: 1.6;
+        }
+        /* ── Total Block ── */
+        .total-block {
+            background: #f8fffe;
+            border: 1px solid #c6f6e8;
+            border-radius: 12px;
+            padding: 18px 20px;
+            margin-top: 6px;
+            text-align: center;
+        }
+        .total-label {
+            color: #6b7280;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            display: block;
+            margin-bottom: 4px;
+        }
+        .total-value {
+            color: #059669;
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            display: block;
+        }
+        /* ── Contact Box ── */
+        .contact-box {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin-top: 20px;
+            text-align: center;
+        }
+        .contact-box p {
+            margin: 4px 0;
+            font-size: 13px;
+            color: #6b7280;
+        }
+        .contact-box a {
+            color: #059669;
+            font-weight: 600;
+            text-decoration: none;
+        }
+        /* ── Footer ── */
+        .footer {
+            text-align: center;
+            padding: 14px 28px 22px;
+            font-size: 11.5px;
+            color: #9ca3af;
+            border-top: 1px solid #f3f4f6;
+            margin-top: 22px;
+        }
+        .footer a { color: #4BFDB3; text-decoration: none; }
 CSS;
 
-// ══════════════════════════════════════════════════════════════
-// EMAIL 1: TO SITE OWNER — Full form data + payment details
-// ══════════════════════════════════════════════════════════════
-$ownerSubject = "🔔 طلب دفع جديد - $name - $transactionId";
+    // ══════════════════════════════════════════════════════════════
+    // EMAIL 1: TO SITE OWNER
+    // ══════════════════════════════════════════════════════════════
+    $ownerSubject = "🔔 New Payment Request — $name — $transactionId";
 
-$ownerHtml = <<<HTML
+    $ownerHtml = <<<HTML
 <!DOCTYPE html>
-<html dir="rtl" lang="ar">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>$commonStyles</style>
 </head>
 <body>
+<div class="wrapper">
     <div class="container">
+
         <div class="header">
-            <h1>🔔 طلب دفع جديد</h1>
-            <p class="sub">تم استلام دفعة جديدة عبر الموقع</p>
+            <h1>🔔 New Payment Request</h1>
+            <p class="sub">A new payment has been received via the website</p>
         </div>
 
-        <div class="customer-info">
-            <div class="customer-info-title">👤 بيانات العميل</div>
-            <div class="detail-row">
-                <span class="detail-label">الاسم الكامل</span>
-                <span class="detail-value">$name</span>
-            </div>
-            <div class="detail-row">
-                <span class="detail-label">رقم الهاتف</span>
-                <span class="detail-value" style="direction:ltr;text-align:right;">$phone</span>
-            </div>
-            <div class="detail-row">
-                <span class="detail-label">البريد الإلكتروني</span>
-                <span class="detail-value">$email</span>
-            </div>
-        </div>
+        <div class="body-content">
 
-        <div class="detail-row">
-            <span class="detail-label">رقم العملية</span>
-            <span class="detail-value" style="font-weight:700; color:#4BFDB3;">$transactionId</span>
-        </div>
-        <div class="detail-row">
-            <span class="detail-label">الخدمة المطلوبة</span>
-            <span class="detail-value">$serviceDisplay</span>
-        </div>
-        $inquiryHtml
-        <div class="detail-row">
-            <span class="detail-label">طريقة الدفع</span>
-            <span class="detail-value">$methodName</span>
-        </div>
-        <div class="detail-row">
-            <span class="detail-label">تاريخ العملية</span>
-            <span class="detail-value">$dateNow</span>
-        </div>
-        <div class="detail-row">
-            <span class="detail-label">الحالة</span>
-            <span class="detail-value"><span class="status-badge">✓ مكتمل</span></span>
-        </div>
-        <div class="total-row">
-            <div class="detail-row" style="border-bottom: none; padding: 0;">
-                <span class="detail-label" style="font-size: 16px; font-weight:700;">المبلغ المدفوع</span>
-                <span class="detail-value" style="font-size: 22px; color: #22c55e; font-weight:800;">AED $amount</span>
+            <!-- Customer Info -->
+            <div class="customer-block">
+                <div class="customer-block-title">👤 Customer Data</div>
+                <table class="detail-table">
+                    <tr>
+                        <td class="col-label">Full Name</td>
+                        <td class="col-value">$name</td>
+                    </tr>
+                    <tr>
+                        <td class="col-label">Phone Number</td>
+                        <td class="col-value">$phone</td>
+                    </tr>
+                    <tr>
+                        <td class="col-label">E-mail</td>
+                        <td class="col-value">$email</td>
+                    </tr>
+                </table>
             </div>
-        </div>
-        <div class="footer">
-            <p>هذا البريد تلقائي من نظام Over Seas للدفع — يرجى عدم الرد.</p>
+
+            <!-- Payment Details -->
+            <div class="section">
+                <div class="section-title">💳 Payment Details</div>
+                <table class="detail-table">
+                    <tr>
+                        <td class="col-label">Transaction Number</td>
+                        <td class="col-value txn-value">$transactionId</td>
+                    </tr>
+                    <tr>
+                        <td class="col-label">Required Service</td>
+                        <td class="col-value">$serviceDisplay</td>
+                    </tr>
+                    <tr>
+                        <td class="col-label">Payment Method</td>
+                        <td class="col-value">$methodName</td>
+                    </tr>
+                    <tr>
+                        <td class="col-label">Date of Operation</td>
+                        <td class="col-value">$dateNow</td>
+                    </tr>
+                    <tr>
+                        <td class="col-label">Status</td>
+                        <td class="col-value"><span class="status-badge">✓ Completed</span></td>
+                    </tr>
+                </table>
+                $inquiryHtml
+            </div>
+
+            <!-- Total -->
+            <div class="total-block">
+                <span class="total-label">Amount Paid</span>
+                <span class="total-value">AED $amount</span>
+            </div>
+
+            <div class="footer">
+                <p>This is an automated email from Over Seas Payment System — please do not reply.</p>
+            </div>
+
         </div>
     </div>
+</div>
 </body>
 </html>
 HTML;
 
-$ownerPlain = <<<TEXT
-🔔 طلب دفع جديد - Over Seas
-═══════════════════════════════
+    $ownerPlain = <<<TEXT
+🔔 New Payment Request - Over Seas
+═══════════════════════════════════
 
-👤 بيانات العميل:
-  الاسم: $name
-  الهاتف: $phone
-  البريد: $email
+👤 Customer Data:
+  Full Name    : $name
+  Phone        : $phone
+  Email        : $email
 
-💳 تفاصيل الدفع:
-  رقم العملية: $transactionId
-  الخدمة: $serviceDisplay
-  {$inquiryText}طريقة الدفع: $methodName
-  المبلغ: AED $amount
-  التاريخ: $dateNow
-  الحالة: مكتمل
+💳 Payment Details:
+  Transaction  : $transactionId
+  Service      : $serviceDisplay
+  {$inquiryText}Method       : $methodName
+  Amount       : AED $amount
+  Date         : $dateNow
+  Status       : Completed ✓
 
-═══════════════════════════════
+═══════════════════════════════════
 TEXT;
 
-// ══════════════════════════════════════════════════════════════
-// EMAIL 2: TO USER — Payment receipt / confirmation
-// ══════════════════════════════════════════════════════════════
-$userSubject = "✅ تأكيد الدفع - Over Seas - $transactionId";
+    // ══════════════════════════════════════════════════════════════
+    // EMAIL 2: TO USER — Payment receipt
+    // ══════════════════════════════════════════════════════════════
+    $userSubject = "✅ Payment Confirmed — Over Seas — $transactionId";
 
-$userHtml = <<<HTML
+    $userHtml = <<<HTML
 <!DOCTYPE html>
-<html dir="rtl" lang="ar">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>$commonStyles
-    .thank-you { text-align: center; margin: 20px 0 24px; }
-    .thank-you h2 { color: #0a0a0a; font-size: 20px; margin: 0 0 6px; }
-    .thank-you p { color: #666; font-size: 14px; margin: 0; }
-    .contact-box { background: #f8fafc; border-radius: 12px; padding: 16px; margin-top: 16px; text-align: center; border: 1px solid #e2e8f0; }
-    .contact-box p { margin: 4px 0; font-size: 13px; color: #555; }
-    .contact-box a { color: #4BFDB3; font-weight: 600; text-decoration: none; }
+    .thank-you {
+        text-align: center;
+        padding: 22px 0 18px;
+        border-bottom: 1px solid #f0f0f0;
+        margin-bottom: 22px;
+    }
+    .check-icon {
+        width: 54px;
+        height: 54px;
+        background: #dcfce7;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 26px;
+        margin-bottom: 12px;
+    }
+    .thank-you h2 {
+        color: #111827;
+        font-size: 19px;
+        margin: 0 0 6px;
+        font-weight: 700;
+    }
+    .thank-you p {
+        color: #6b7280;
+        font-size: 13.5px;
+        margin: 0;
+    }
     </style>
 </head>
 <body>
+<div class="wrapper">
     <div class="container">
+
         <div class="header">
             <h1>🛫 Over Seas</h1>
-            <p class="sub">إيصال الدفع</p>
+            <p class="sub">Official Payment Receipt</p>
         </div>
 
-        <div class="thank-you">
-            <h2>شكراً لك يا $name! ✅</h2>
-            <p>تم استلام دفعتك بنجاح. إليك تفاصيل العملية:</p>
-        </div>
+        <div class="body-content">
 
-        <div class="detail-row">
-            <span class="detail-label">رقم العملية</span>
-            <span class="detail-value" style="font-weight:700;">$transactionId</span>
-        </div>
-        <div class="detail-row">
-            <span class="detail-label">الخدمة</span>
-            <span class="detail-value">$serviceDisplay</span>
-        </div>
-        $inquiryHtml
-        <div class="detail-row">
-            <span class="detail-label">طريقة الدفع</span>
-            <span class="detail-value">$methodName</span>
-        </div>
-        <div class="detail-row">
-            <span class="detail-label">التاريخ</span>
-            <span class="detail-value">$dateNow</span>
-        </div>
-        <div class="detail-row">
-            <span class="detail-label">الحالة</span>
-            <span class="detail-value"><span class="status-badge">✓ مكتمل</span></span>
-        </div>
-        <div class="total-row">
-            <div class="detail-row" style="border-bottom: none; padding: 0;">
-                <span class="detail-label" style="font-size: 16px;">المبلغ المدفوع</span>
-                <span class="detail-value" style="font-size: 22px; color: #22c55e; font-weight:800;">AED $amount</span>
+            <!-- Thank You -->
+            <div class="thank-you">
+                <div class="check-icon">✅</div>
+                <h2>Thank you, $name!</h2>
+                <p>Your payment has been received successfully. Here are your transaction details for reference.</p>
             </div>
-        </div>
 
-        <div class="contact-box">
-            <p>هل لديك أي استفسار؟</p>
-            <p><a href="https://wa.me/971564630165">تواصل معنا عبر واتساب</a> | <a href="mailto:info@overseas.ae">info@overseas.ae</a></p>
-        </div>
+            <!-- Payment Details -->
+            <div class="section">
+                <div class="section-title">📋 Transaction Details</div>
+                <table class="detail-table">
+                    <tr>
+                        <td class="col-label">Transaction Number</td>
+                        <td class="col-value txn-value">$transactionId</td>
+                    </tr>
+                    <tr>
+                        <td class="col-label">Service</td>
+                        <td class="col-value">$serviceDisplay</td>
+                    </tr>
+                    <tr>
+                        <td class="col-label">Payment Method</td>
+                        <td class="col-value">$methodName</td>
+                    </tr>
+                    <tr>
+                        <td class="col-label">Date</td>
+                        <td class="col-value">$dateNow</td>
+                    </tr>
+                    <tr>
+                        <td class="col-label">Status</td>
+                        <td class="col-value"><span class="status-badge">✓ Completed</span></td>
+                    </tr>
+                </table>
+                $inquiryHtml
+            </div>
 
-        <div class="footer">
-            <p>هذا إيصال تلقائي من Over Seas. يرجى الاحتفاظ به كمرجع.</p>
-            <p>© Over Seas - جميع الحقوق محفوظة</p>
+            <!-- Total -->
+            <div class="total-block">
+                <span class="total-label">Amount Paid</span>
+                <span class="total-value">AED $amount</span>
+            </div>
+
+            <!-- Contact -->
+            <div class="contact-box">
+                <p>Have a question? We're here to help.</p>
+                <p>
+                    <a href="https://wa.me/971564630165">💬 WhatsApp</a>
+                    &nbsp;&nbsp;|&nbsp;&nbsp;
+                    <a href="mailto:info@overseas.ae">✉️ info@overseas.ae</a>
+                </p>
+            </div>
+
+            <div class="footer">
+                <p>This is an automated receipt from Over Seas. Please keep it for your records.</p>
+                <p>© Over Seas — All rights reserved</p>
+            </div>
+
         </div>
     </div>
+</div>
 </body>
 </html>
 HTML;
 
-$userPlain = <<<TEXT
-✅ تأكيد الدفع - Over Seas
-═══════════════════════════════
+    $userPlain = <<<TEXT
+✅ Payment Confirmed - Over Seas
+═══════════════════════════════════
 
-شكراً لك يا $name!
-تم استلام دفعتك بنجاح.
+Thank you, $name!
+Your payment has been received successfully.
 
-تفاصيل العملية:
-  رقم العملية: $transactionId
-  الخدمة: $serviceDisplay
-  {$inquiryText}طريقة الدفع: $methodName
-  المبلغ: AED $amount
-  التاريخ: $dateNow
-  الحالة: مكتمل
+Transaction Details:
+  Transaction  : $transactionId
+  Service      : $serviceDisplay
+  {$inquiryText}Method       : $methodName
+  Amount       : AED $amount
+  Date         : $dateNow
+  Status       : Completed ✓
 
-═══════════════════════════════
-للاستفسار: واتساب 971564630165+
-البريد: info@overseas.ae
+═══════════════════════════════════
+Support: WhatsApp +971564630165
+Email  : info@overseas.ae
 TEXT;
 
+    // ══════════════════════════════════════════════════════════════
+    // SEND BOTH EMAILS
+    // ══════════════════════════════════════════════════════════════
+    $errors = [];
 
-// ══════════════════════════════════════════════════════════════
-// SEND BOTH EMAILS
-// ══════════════════════════════════════════════════════════════
-$errors = [];
+    $configureSMTP = function(PHPMailer $mail) use ($SMTP_HOST, $SMTP_USER, $SMTP_PASS, $SMTP_PORT, $SMTP_SECURE) {
+        $mail->isSMTP();
+        $mail->Host     = $SMTP_HOST;
+        $mail->SMTPAuth = true;
+        $mail->Username = $SMTP_USER;
+        $mail->Password = $SMTP_PASS;
+        $mail->CharSet  = 'UTF-8';
 
-// ── Email 1: To Site Owner ──────────────────────────────────
-try {
-    $mailOwner = new PHPMailer(true);
-    $mailOwner->isSMTP();
-    $mailOwner->Host       = $SMTP_HOST;
-    $mailOwner->SMTPAuth   = true;
-    $mailOwner->Username   = $SMTP_USER;
-    $mailOwner->Password   = $SMTP_PASS;
-    
-    if (strtolower($SMTP_SECURE) === 'ssl') {
-        $mailOwner->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
-        $mailOwner->Port       = $SMTP_PORT !== 587 ? $SMTP_PORT : 465;
-    } else if (strtolower($SMTP_SECURE) === 'none') {
-        $mailOwner->SMTPSecure = false;
-        $mailOwner->SMTPAutoTLS = false;
-        $mailOwner->Port       = $SMTP_PORT !== 587 ? $SMTP_PORT : 25;
-    } else {
-        $mailOwner->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mailOwner->Port       = $SMTP_PORT;
+        $secure = strtolower($SMTP_SECURE);
+        if ($secure === 'ssl') {
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+            $mail->Port       = $SMTP_PORT !== 587 ? $SMTP_PORT : 465;
+        } elseif ($secure === 'none') {
+            $mail->SMTPSecure  = false;
+            $mail->SMTPAutoTLS = false;
+            $mail->Port        = $SMTP_PORT !== 587 ? $SMTP_PORT : 25;
+        } else {
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Port       = $SMTP_PORT;
+        }
+
+        $mail->setFrom($SMTP_USER, 'Over Seas');
+        $mail->Sender = $SMTP_USER;
+        $mail->addCustomHeader('X-Mailer', 'OverSeas-Payments');
+    };
+
+    // ── Email 1: To Site Owner ──────────────────────────────────
+    try {
+        $mailOwner = new PHPMailer(true);
+        $configureSMTP($mailOwner);
+        $mailOwner->addAddress($SITE_OWNER);
+        $mailOwner->addReplyTo($userEmail, $data['name']);
+        $mailOwner->MessageID = '<' . $transactionId . '-owner-' . time() . '@overseas.ae>';
+
+        $mailOwner->isHTML(true);
+        $mailOwner->Subject = $ownerSubject;
+        $mailOwner->Body    = $ownerHtml;
+        $mailOwner->AltBody = $ownerPlain;
+
+        $mailOwner->send();
+        file_put_contents($logFile, date('Y-m-d H:i:s') . " - ✅ Owner email sent to: $SITE_OWNER\n", FILE_APPEND);
+    } catch (Exception $e) {
+        $errorMsg = "Owner email failed: " . $mailOwner->ErrorInfo;
+        $errors[] = $errorMsg;
+        file_put_contents($logFile, date('Y-m-d H:i:s') . " - ❌ " . $errorMsg . "\n", FILE_APPEND);
     }
-    
-    $mailOwner->CharSet    = 'UTF-8';
 
-    $mailOwner->setFrom($SMTP_USER, 'Over Seas');
-    $mailOwner->Sender = $SMTP_USER; // align envelope-from with authenticated account (helps deliverability)
-    $mailOwner->addAddress($SITE_OWNER);
-    $mailOwner->addReplyTo($userEmail, $data['name']);
-    $mailOwner->MessageID = '<' . $transactionId . '-owner-' . time() . '@overseas.ae>';
-    $mailOwner->addCustomHeader('X-Mailer', 'OverSeas-Payments');
+    // ── Email 2: To User (Receipt) ──────────────────────────────
+    try {
+        $mailUser = new PHPMailer(true);
+        $configureSMTP($mailUser);
+        $mailUser->addAddress($userEmail, $data['name']);
+        $mailUser->addReplyTo('info@overseas.ae', 'Over Seas Support');
+        $mailUser->MessageID = '<' . $transactionId . '-receipt-' . time() . '@overseas.ae>';
 
-    $mailOwner->isHTML(true);
-    $mailOwner->Subject = $ownerSubject;
-    $mailOwner->Body    = $ownerHtml;
-    $mailOwner->AltBody = $ownerPlain;
+        $mailUser->isHTML(true);
+        $mailUser->Subject = $userSubject;
+        $mailUser->Body    = $userHtml;
+        $mailUser->AltBody = $userPlain;
 
-    $mailOwner->send();
-    file_put_contents($logFile, date('Y-m-d H:i:s') . " - ✅ Owner email sent to: $SITE_OWNER\n", FILE_APPEND);
-} catch (Exception $e) {
-    $errorMsg = "Owner email failed: " . $mailOwner->ErrorInfo;
-    $errors[] = $errorMsg;
-    file_put_contents($logFile, date('Y-m-d H:i:s') . " - ❌ " . $errorMsg . "\n", FILE_APPEND);
-}
-
-// ── Email 2: To User (Receipt) ──────────────────────────────
-try {
-    $mailUser = new PHPMailer(true);
-    $mailUser->isSMTP();
-    $mailUser->Host       = $SMTP_HOST;
-    $mailUser->SMTPAuth   = true;
-    $mailUser->Username   = $SMTP_USER;
-    $mailUser->Password   = $SMTP_PASS;
-    
-    if (strtolower($SMTP_SECURE) === 'ssl') {
-        $mailUser->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
-        $mailUser->Port       = $SMTP_PORT !== 587 ? $SMTP_PORT : 465;
-    } else if (strtolower($SMTP_SECURE) === 'none') {
-        $mailUser->SMTPSecure = false;
-        $mailUser->SMTPAutoTLS = false;
-        $mailUser->Port       = $SMTP_PORT !== 587 ? $SMTP_PORT : 25;
-    } else {
-        $mailUser->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mailUser->Port       = $SMTP_PORT;
+        $mailUser->send();
+        file_put_contents($logFile, date('Y-m-d H:i:s') . " - ✅ User email sent to: $userEmail\n", FILE_APPEND);
+    } catch (Exception $e) {
+        $errorMsg = "User email failed: " . $mailUser->ErrorInfo;
+        $errors[] = $errorMsg;
+        file_put_contents($logFile, date('Y-m-d H:i:s') . " - ❌ " . $errorMsg . "\n", FILE_APPEND);
     }
-    
-    $mailUser->CharSet    = 'UTF-8';
-
-    $mailUser->setFrom($SMTP_USER, 'Over Seas');
-    $mailUser->Sender = $SMTP_USER; // align envelope-from with authenticated account (helps deliverability)
-    $mailUser->addAddress($userEmail, $data['name']);
-    $mailUser->addReplyTo('info@overseas.ae', 'Over Seas Support');
-    $mailUser->MessageID = '<' . $transactionId . '-receipt-' . time() . '@overseas.ae>';
-    $mailUser->addCustomHeader('X-Mailer', 'OverSeas-Payments');
-
-    $mailUser->isHTML(true);
-    $mailUser->Subject = $userSubject;
-    $mailUser->Body    = $userHtml;
-    $mailUser->AltBody = $userPlain;
-
-    $mailUser->send();
-    file_put_contents($logFile, date('Y-m-d H:i:s') . " - ✅ User email sent to: $userEmail\n", FILE_APPEND);
-} catch (Exception $e) {
-    $errorMsg = "User email failed: " . $mailUser->ErrorInfo;
-    $errors[] = $errorMsg;
-    file_put_contents($logFile, date('Y-m-d H:i:s') . " - ❌ " . $errorMsg . "\n", FILE_APPEND);
-}
 
     // ── Response ─────────────────────────────────────────────────
     if (empty($errors)) {
@@ -398,11 +607,8 @@ try {
 
 // ── HTTP API Handler ──────────────────────────────────────────
 if (basename($_SERVER['SCRIPT_FILENAME']) === 'send-email.php') {
-    // Keep running even if the browser navigates away (redirect) mid-request.
-    // Without this, PHP kills the script the moment the client disconnects,
-    // which races against the redirect in payment-gateway.html.
     ignore_user_abort(true);
-    set_time_limit(120); // 2 minutes max, well beyond the ~6s email send time
+    set_time_limit(120);
 
     header('Access-Control-Allow-Origin: *');
     header('Access-Control-Allow-Methods: POST, OPTIONS');
@@ -422,18 +628,18 @@ if (basename($_SERVER['SCRIPT_FILENAME']) === 'send-email.php') {
 
     $json = file_get_contents('php://input');
     $data = json_decode($json, true) ?: [];
-    
+
     $res = sendNotificationEmails($data);
     if ($res['success']) {
         echo json_encode([
-            'success' => true,
-            'message' => 'Both emails sent successfully',
+            'success'        => true,
+            'message'        => 'Both emails sent successfully',
             'transaction_id' => $data['transactionId'] ?? 'N/A'
         ]);
     } else {
         http_response_code(500);
         echo json_encode([
-            'error' => 'One or more emails failed',
+            'error'   => 'One or more emails failed',
             'details' => $res['errors'] ?? []
         ]);
     }

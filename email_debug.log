@@ -1,12 +1,6 @@
-2026-06-21 19:49:27 - Received data for processing: {"name":"noor osama","phone":"+971 56 463 0165","email":"aslamnoman433@gmail.com","service":"Paying fines","inquiryMessage":"","amount":"2.12","paymentMethod":"card","transactionId":"OS-N3ARAHDY5I7C"}
-2026-06-21 19:49:27 - Processing payment: OS-N3ARAHDY5I7C for noor osama
-2026-06-21 19:49:30 - ✅ Owner email sent to: nomanaslam390@gmail.com
-2026-06-21 19:49:33 - ✅ User email sent to: aslamnoman433@gmail.com
-2026-06-21 19:49:33 - ✅ Both emails sent successfully for OS-N3ARAHDY5I7C
-
-2026-06-21 19:50:51 - Received data for processing: {"name":"rabia khan","phone":"+971 56 463 0165","email":"aslamnoman433@gmail.com","service":"Paying fines","inquiryMessage":"","amount":"2.12","paymentMethod":"card","transactionId":"OS-ZO345DHM11JX"}
-2026-06-21 19:50:51 - Processing payment: OS-ZO345DHM11JX for rabia khan
-2026-06-21 19:50:54 - ✅ Owner email sent to: nomanaslam390@gmail.com
-2026-06-21 19:50:57 - ✅ User email sent to: aslamnoman433@gmail.com
-2026-06-21 19:50:57 - ✅ Both emails sent successfully for OS-ZO345DHM11JX
+2026-06-21 20:28:45 - Received data: {"name":"rabia khan","phone":"+971 56 463 0165","email":"aslamnoman433@gmail.com","service":"Travel booking","inquiryMessage":"","amount":"106.00","paymentMethod":"card","transactionId":"OS-JN346S47HAF3"}
+2026-06-21 20:28:45 - Processing payment: OS-JN346S47HAF3 for rabia khan
+2026-06-21 20:28:48 - ✅ Owner email sent to: nomanaslam390@gmail.com
+2026-06-21 20:28:51 - ✅ User email sent to: aslamnoman433@gmail.com
+2026-06-21 20:28:51 - ✅ Both emails sent successfully for OS-JN346S47HAF3
 
