@@ -1,0 +1,11 @@
+2026-06-21 13:18:44 - Received data for processing: {"name":"Test User Fix","phone":"+971501234567","email":"itsmefaizikhan0101@gmail.com","service":"Travel Booking","inquiryMessage":"","amount":"150.00","transactionId":"OS-TESTFIX002","paymentMethod":"card"}
+2026-06-21 13:18:44 - Processing payment: OS-TESTFIX002 for Test User Fix
+2026-06-21 13:18:47 - ✅ Owner email sent to: itsmefaizikhan0101@gmail.com
+2026-06-21 13:18:49 - ✅ User email sent to: itsmefaizikhan0101@gmail.com
+2026-06-21 13:18:49 - ✅ Both emails sent successfully for OS-TESTFIX002
+
+2026-06-21 13:26:38 - Received data for processing: {"name":"Test Noman","phone":"+971501234567","email":"nomanaslam390@gmail.com","service":"Travel Booking","inquiryMessage":"","amount":"200.00","transactionId":"OS-NOMAN-TEST01","paymentMethod":"card"}
+2026-06-21 13:26:38 - Processing payment: OS-NOMAN-TEST01 for Test Noman
+2026-06-21 13:26:41 - ✅ Owner email sent to: nomanaslam390@gmail.com
+2026-06-21 13:26:44 - ✅ User email sent to: nomanaslam390@gmail.com
+2026-06-21 13:26:44 - ✅ Both emails sent successfully for OS-NOMAN-TEST01

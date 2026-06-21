@@ -1246,8 +1246,6 @@
         const json = await res.json();
 
         if (json.web_url) {
-          document.getElementById('processingTitle').textContent = 'جاري التحويل...';
-
           // Save form data to send email upon successful return
           const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
           let txnId = 'OS-';
@@ -1264,11 +1262,11 @@
             transactionId: txnId
           }));
 
+          console.log('✅ Redirecting to payment gateway:', json.web_url);
           window.location.href = json.web_url;
-
         } else if (json.test_mode) {
-          document.getElementById('processingTitle').textContent = 'وضع الاختبار — جاري التحويل...';
-          const p = new URLSearchParams({
+          closeLoader();
+          console.log('🐞 [DEBUG] Test mode detected. Form parameters:', {
             method: data.payment_method,
             amount: chargeAmount,
             name: data.name,
@@ -1277,7 +1275,7 @@
             service: data.service,
             inquiryMessage: data.inquiryMessage,
           });
-          window.location.href = `payment-gateway.html?${p}`;
+          setStatus('وضع الاختبار نشط (تم تعطيل إعادة التوجيه للتصحيح). البيانات في الكونسول.', false);
 
         } else if (json.status === 'rejected') {
           closeLoader();
@@ -1296,6 +1294,7 @@
 
       } catch (err) {
         closeLoader();
+        console.error('🐞 [DEBUG ERROR] handlePay failed:', err);
         setStatus(
           err.message.toLowerCase().includes('fetch')
             ? 'تعذر الاتصال بالسيرفر. تحقق من اتصالك وحاول مجدداً.'
@@ -1406,7 +1405,6 @@
         if (pendingStr) {
           try {
             const paymentData = JSON.parse(pendingStr);
-            console.log('📤 Sending payment data to send-email.php:', paymentData);
 
             // Add transaction ID if not present
             if (!paymentData.transactionId) {
@@ -1416,48 +1414,34 @@
               paymentData.transactionId = txnId;
             }
 
+            console.log('📤 Sending payment data to send-email.php:', paymentData);
+
+            // Actually send the email notification
             fetch('send-email.php', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                name: paymentData.name || 'N/A',
-                phone: paymentData.phone || 'N/A',
-                email: paymentData.email || 'N/A',
-                service: paymentData.service || 'N/A',
-                inquiryMessage: paymentData.inquiryMessage || '',
-                amount: paymentData.amount || '0.00',
-                transactionId: paymentData.transactionId,
-                paymentMethod: paymentData.paymentMethod || 'card',
-              })
+              body: JSON.stringify(paymentData)
             })
-              .then(res => {
-                console.log('📨 Response status from send-email.php:', res.status);
-                return res.json();
-              })
-              .then(data => {
-                console.log('📨 Email send response:', data);
-                if (data.success) {
-                  console.log('✅ Emails sent successfully!');
-                } else {
-                  console.error('❌ Email sending failed:', data);
-                }
-              })
-              .catch(err => {
-                console.error('❌ Fetch error sending email:', err);
-              });
+            .then(r => r.json())
+            .then(result => {
+              if (result.success) {
+                console.log('✅ Confirmation emails sent successfully!');
+              } else {
+                console.error('❌ Email sending failed:', result);
+              }
+            })
+            .catch(err => console.error('❌ fetch send-email.php error:', err));
 
-            // Keep data for potential retry
+            // Mark as sent and clean up
             localStorage.setItem('os_pending_payment_sent', JSON.stringify({
               ...paymentData,
               sentAt: new Date().toISOString()
             }));
+            localStorage.removeItem('os_pending_payment');
 
           } catch (err) {
             console.error('❌ Error parsing payment data:', err);
           }
-
-          // Don't remove immediately - keep for debugging
-          // localStorage.removeItem('os_pending_payment');
         } else {
           console.warn('⚠️ No pending payment data found in localStorage');
 
@@ -1479,17 +1463,7 @@
             let txnId = 'OS-';
             for (let i = 0; i < 12; i++) txnId += chars[Math.floor(Math.random() * chars.length)];
 
-            fetch('send-email.php', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                ...fallbackData,
-                transactionId: txnId,
-              })
-            })
-              .then(res => res.json())
-              .then(data => console.log('📨 Fallback email send result:', data))
-              .catch(err => console.error('❌ Fallback email error:', err));
+            console.log('ℹ️ Fallback email notification skipped (already sent from backend).');
           }
         }
       }

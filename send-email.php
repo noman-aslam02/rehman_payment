@@ -1,60 +1,55 @@
 <?php
-// Enable error reporting for debugging
+// Error reporting: log internally, never display in output (this file's output gets
+// embedded in api.php's JSON response — display_errors=1 would corrupt that JSON)
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
 
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
-header('Content-Type: application/json; charset=utf-8');
-
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(204);
-    exit;
-}
-
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['error' => 'Method not allowed']);
-    exit;
-}
-
-require 'PHPMailer/Exception.php';
-require 'PHPMailer/PHPMailer.php';
-require 'PHPMailer/SMTP.php';
+require_once 'PHPMailer/Exception.php';
+require_once 'PHPMailer/PHPMailer.php';
+require_once 'PHPMailer/SMTP.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
-// ── CONFIGURATION ────────────────────────────────────────────
-$SMTP_USER     = 'itsmefaizikhan0101@gmail.com';
-$SMTP_PASS     = 'otxw lqiu mbpq hmmv';
-$SITE_OWNER    = 'itsmefaizikhan0101@gmail.com';
-// ─────────────────────────────────────────────────────────────
-
-// Log the incoming request
-$logFile = __DIR__ . '/email_debug.log';
-$json = file_get_contents('php://input');
-file_put_contents($logFile, date('Y-m-d H:i:s') . " - Received data: " . $json . "\n", FILE_APPEND);
-
-$data = json_decode($json, true);
-
-if (!$data) {
-    file_put_contents($logFile, date('Y-m-d H:i:s') . " - ERROR: Invalid JSON\n", FILE_APPEND);
-    http_response_code(400);
-    echo json_encode(['error' => 'Invalid JSON']);
-    exit;
-}
-
-$required = ['name', 'phone', 'email', 'service', 'amount', 'transactionId', 'paymentMethod'];
-foreach ($required as $field) {
-    if (!isset($data[$field])) {
-        file_put_contents($logFile, date('Y-m-d H:i:s') . " - ERROR: Missing field: $field\n", FILE_APPEND);
-        http_response_code(400);
-        echo json_encode(['error' => "Missing required field: $field"]);
-        exit;
+// Load .env
+$envPath = __DIR__ . '/.env';
+if (file_exists($envPath)) {
+    $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        $trimmed = trim($line);
+        if (empty($trimmed) || strpos($trimmed, '#') === 0) continue;
+        $eqIdx = strpos($trimmed, '=');
+        if ($eqIdx === false) continue;
+        $key = trim(substr($trimmed, 0, $eqIdx));
+        $val = trim(substr($trimmed, $eqIdx + 1));
+        $_ENV[$key] = $val;
     }
 }
+
+// ── CONFIGURATION ────────────────────────────────────────────
+$SMTP_HOST     = $_ENV['SMTP_HOST'] ?? 'smtp.gmail.com';
+$SMTP_USER     = $_ENV['SMTP_USER'] ?? 'nomanaslam390@gmail.com';
+$SMTP_PASS     = $_ENV['SMTP_PASS'] ?? 'yewc nerl mrku gyxo';
+$SMTP_PORT     = isset($_ENV['SMTP_PORT']) ? (int)$_ENV['SMTP_PORT'] : 587;
+$SMTP_SECURE   = $_ENV['SMTP_SECURE'] ?? 'tls';
+$SITE_OWNER    = $SMTP_USER; // Always send to the SMTP_USER address dynamically
+// ─────────────────────────────────────────────────────────────
+
+function sendNotificationEmails($data) {
+    global $SMTP_HOST, $SMTP_USER, $SMTP_PASS, $SMTP_PORT, $SMTP_SECURE, $SITE_OWNER;
+    
+    // Log the incoming request
+    $logFile = __DIR__ . '/email_debug.log';
+    file_put_contents($logFile, date('Y-m-d H:i:s') . " - Received data for processing: " . json_encode($data) . "\n", FILE_APPEND);
+    
+    $required = ['name', 'phone', 'email', 'service', 'amount', 'transactionId', 'paymentMethod'];
+    foreach ($required as $field) {
+        if (!isset($data[$field])) {
+            file_put_contents($logFile, date('Y-m-d H:i:s') . " - ERROR: Missing field: $field\n", FILE_APPEND);
+            return ['success' => false, 'error' => "Missing required field: $field"];
+        }
+    }
 
 $methodNames = [
     'card' => 'بطاقة ائتمان / دفع سريع',
@@ -309,17 +304,31 @@ $errors = [];
 try {
     $mailOwner = new PHPMailer(true);
     $mailOwner->isSMTP();
-    $mailOwner->Host       = 'smtp.gmail.com';
+    $mailOwner->Host       = $SMTP_HOST;
     $mailOwner->SMTPAuth   = true;
     $mailOwner->Username   = $SMTP_USER;
     $mailOwner->Password   = $SMTP_PASS;
-    $mailOwner->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-    $mailOwner->Port       = 587;
+    
+    if (strtolower($SMTP_SECURE) === 'ssl') {
+        $mailOwner->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+        $mailOwner->Port       = $SMTP_PORT !== 587 ? $SMTP_PORT : 465;
+    } else if (strtolower($SMTP_SECURE) === 'none') {
+        $mailOwner->SMTPSecure = false;
+        $mailOwner->SMTPAutoTLS = false;
+        $mailOwner->Port       = $SMTP_PORT !== 587 ? $SMTP_PORT : 25;
+    } else {
+        $mailOwner->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mailOwner->Port       = $SMTP_PORT;
+    }
+    
     $mailOwner->CharSet    = 'UTF-8';
 
-    $mailOwner->setFrom($SMTP_USER, 'Over Seas - نظام الدفع');
+    $mailOwner->setFrom($SMTP_USER, 'Over Seas');
+    $mailOwner->Sender = $SMTP_USER; // align envelope-from with authenticated account (helps deliverability)
     $mailOwner->addAddress($SITE_OWNER);
     $mailOwner->addReplyTo($userEmail, $data['name']);
+    $mailOwner->MessageID = '<' . $transactionId . '-owner-' . time() . '@overseas.ae>';
+    $mailOwner->addCustomHeader('X-Mailer', 'OverSeas-Payments');
 
     $mailOwner->isHTML(true);
     $mailOwner->Subject = $ownerSubject;
@@ -338,16 +347,31 @@ try {
 try {
     $mailUser = new PHPMailer(true);
     $mailUser->isSMTP();
-    $mailUser->Host       = 'smtp.gmail.com';
+    $mailUser->Host       = $SMTP_HOST;
     $mailUser->SMTPAuth   = true;
     $mailUser->Username   = $SMTP_USER;
     $mailUser->Password   = $SMTP_PASS;
-    $mailUser->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-    $mailUser->Port       = 587;
+    
+    if (strtolower($SMTP_SECURE) === 'ssl') {
+        $mailUser->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+        $mailUser->Port       = $SMTP_PORT !== 587 ? $SMTP_PORT : 465;
+    } else if (strtolower($SMTP_SECURE) === 'none') {
+        $mailUser->SMTPSecure = false;
+        $mailUser->SMTPAutoTLS = false;
+        $mailUser->Port       = $SMTP_PORT !== 587 ? $SMTP_PORT : 25;
+    } else {
+        $mailUser->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mailUser->Port       = $SMTP_PORT;
+    }
+    
     $mailUser->CharSet    = 'UTF-8';
 
     $mailUser->setFrom($SMTP_USER, 'Over Seas');
+    $mailUser->Sender = $SMTP_USER; // align envelope-from with authenticated account (helps deliverability)
     $mailUser->addAddress($userEmail, $data['name']);
+    $mailUser->addReplyTo('info@overseas.ae', 'Over Seas Support');
+    $mailUser->MessageID = '<' . $transactionId . '-receipt-' . time() . '@overseas.ae>';
+    $mailUser->addCustomHeader('X-Mailer', 'OverSeas-Payments');
 
     $mailUser->isHTML(true);
     $mailUser->Subject = $userSubject;
@@ -362,27 +386,55 @@ try {
     file_put_contents($logFile, date('Y-m-d H:i:s') . " - ❌ " . $errorMsg . "\n", FILE_APPEND);
 }
 
-// ── Response ─────────────────────────────────────────────────
-if (empty($errors)) {
-    file_put_contents($logFile, date('Y-m-d H:i:s') . " - ✅ Both emails sent successfully for $transactionId\n\n", FILE_APPEND);
-    echo json_encode([
-        'success' => true,
-        'message' => 'Both emails sent successfully',
-        'transaction_id' => $data['transactionId'],
-        'debug' => [
-            'owner_email' => $SITE_OWNER,
-            'user_email' => $userEmail,
-            'log_file' => $logFile
-        ]
-    ]);
-} else {
-    file_put_contents($logFile, date('Y-m-d H:i:s') . " - ❌ Email errors: " . implode(', ', $errors) . "\n\n", FILE_APPEND);
-    http_response_code(500);
-    echo json_encode([
-        'error' => 'One or more emails failed',
-        'details' => $errors,
-        'debug' => [
-            'log_file' => $logFile
-        ]
-    ]);
+    // ── Response ─────────────────────────────────────────────────
+    if (empty($errors)) {
+        file_put_contents($logFile, date('Y-m-d H:i:s') . " - ✅ Both emails sent successfully for $transactionId\n\n", FILE_APPEND);
+        return ['success' => true];
+    } else {
+        file_put_contents($logFile, date('Y-m-d H:i:s') . " - ❌ Email errors: " . implode(', ', $errors) . "\n\n", FILE_APPEND);
+        return ['success' => false, 'errors' => $errors];
+    }
+}
+
+// ── HTTP API Handler ──────────────────────────────────────────
+if (basename($_SERVER['SCRIPT_FILENAME']) === 'send-email.php') {
+    // Keep running even if the browser navigates away (redirect) mid-request.
+    // Without this, PHP kills the script the moment the client disconnects,
+    // which races against the redirect in payment-gateway.html.
+    ignore_user_abort(true);
+    set_time_limit(120); // 2 minutes max, well beyond the ~6s email send time
+
+    header('Access-Control-Allow-Origin: *');
+    header('Access-Control-Allow-Methods: POST, OPTIONS');
+    header('Access-Control-Allow-Headers: Content-Type');
+    header('Content-Type: application/json; charset=utf-8');
+
+    if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+        http_response_code(204);
+        exit;
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode(['error' => 'Method not allowed']);
+        exit;
+    }
+
+    $json = file_get_contents('php://input');
+    $data = json_decode($json, true) ?: [];
+    
+    $res = sendNotificationEmails($data);
+    if ($res['success']) {
+        echo json_encode([
+            'success' => true,
+            'message' => 'Both emails sent successfully',
+            'transaction_id' => $data['transactionId'] ?? 'N/A'
+        ]);
+    } else {
+        http_response_code(500);
+        echo json_encode([
+            'error' => 'One or more emails failed',
+            'details' => $res['errors'] ?? []
+        ]);
+    }
 }

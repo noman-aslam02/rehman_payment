@@ -500,82 +500,93 @@
       console.log('📤 Sending payment data to send-email.php:', data);
 
       try {
+        const controller = new AbortController();
+        // 15-second timeout: if SMTP stalls beyond this, give up and redirect anyway
+        const fallbackTimer = setTimeout(() => controller.abort(), 15000);
+
         const response = await fetch('send-email.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({
-            name: data.name || 'N/A',
-            phone: data.phone || 'N/A',
-            email: data.email || 'N/A',
-            service: data.service || 'N/A',
-            inquiryMessage: data.inquiryMessage || '',
-            amount: data.amount || '0.00',
-            transactionId: data.txnId || generateTxnId(),
-            paymentMethod: data.method || 'card',
+            name:            data.name            || 'N/A',
+            phone:           data.phone           || 'N/A',
+            email:           data.email           || 'N/A',
+            service:         data.service         || 'N/A',
+            inquiryMessage:  data.inquiryMessage  || '',
+            amount:          data.amount          || '0.00',
+            transactionId:   data.transactionId   || generateTxnId(),
+            paymentMethod:   data.paymentMethod   || 'card',
           }),
         });
 
+        clearTimeout(fallbackTimer);
         const result = await response.json();
         console.log('📨 Email send result:', result);
 
-        if (!response.ok) {
-          console.error('❌ Email sending failed:', result);
+        if (result && result.success === true) {
+          console.log('✅ Emails confirmed sent successfully!');
+          return { success: true };
         } else {
-          console.log('✅ Emails sent successfully!');
+          console.warn('⚠️ Email endpoint returned non-success:', result);
+          return { success: false, detail: result };
         }
-
-        return result;
       } catch (err) {
-        console.error('❌ Failed to send email:', err);
-        // Don't block the user experience if email fails
-        return { error: err.message };
+        if (err.name === 'AbortError') {
+          console.warn('⏱️ Email send timed out after 15s — redirecting anyway.');
+        } else {
+          console.error('❌ Failed to send email:', err);
+        }
+        return { success: false, error: err.message };
       }
     }
 
-    function showSuccess(data) {
-      console.log('🎉 Showing success state with data:', data);
+    async function showSuccess(data) {
+      console.log('🎉 showSuccess() called with:', data);
 
-      document.getElementById('processingState').style.display = 'none';
-      document.getElementById('successState').style.display = 'block';
+      // ── Step 1: Keep the spinner visible, update message to show email is sending
+      const titleEl    = document.getElementById('processingTitle');
+      const subtitleEl = document.getElementById('processingSubtitle');
+      titleEl.textContent    = 'جاري إرسال تأكيد الدفع...';
+      subtitleEl.textContent = 'يرجى الانتظار — سيتم تحويلك تلقائياً';
 
+      // Mark all steps as done while spinner keeps spinning
+      for (let i = 0; i < 3; i++) {
+        document.getElementById(`gstep${i}`).className = 'gateway-step done';
+      }
+
+      // ── Step 2: Prepare data
       const config = METHOD_CONFIG[data.method] || METHOD_CONFIG.card;
-      const txnId = generateTxnId();
+      const txnId  = generateTxnId();
 
-      document.getElementById('txnId').textContent = txnId;
-      document.getElementById('resultMethod').textContent = config.name;
-      document.getElementById('resultAmount').textContent = `AED ${Number(data.amount).toFixed(2)}`;
-      document.getElementById('resultService').textContent = data.service || '--';
-      document.getElementById('resultDate').textContent = new Date().toLocaleDateString('ar-AE', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-
-      // Prepare payment data for email and localStorage
       const paymentData = {
-        name: data.name || 'N/A',
-        phone: data.phone || 'N/A',
-        email: data.email || 'N/A',
-        service: data.service || 'N/A',
+        name:           data.name           || 'N/A',
+        phone:          data.phone          || 'N/A',
+        email:          data.email          || 'N/A',
+        service:        data.service        || 'N/A',
         inquiryMessage: data.inquiryMessage || '',
-        amount: data.amount || '0.00',
-        paymentMethod: data.method || 'card',
-        transactionId: txnId,
+        amount:         data.amount         || '0.00',
+        paymentMethod:  data.method         || 'card',
+        transactionId:  txnId,
       };
 
-      console.log('💾 Saving payment data to localStorage:', paymentData);
       localStorage.setItem('os_pending_payment', JSON.stringify(paymentData));
+      console.log('💾 Saved to localStorage:', paymentData);
 
-      // Send emails
-      sendPaymentData(paymentData);
+      // ── Step 3: Await email — spinner stays on screen the whole time
+      console.log('📤 Awaiting email confirmation...');
+      const emailResult = await sendPaymentData(paymentData);
 
-      // Redirect back to payment.html with success status after 3 seconds
-      setTimeout(() => {
-        console.log('🔀 Redirecting to payment.html?status=success');
-        window.location.href = 'payment.html?status=success';
-      }, 3000);
+      if (emailResult.success) {
+        console.log('✅ Email confirmed. Redirecting to success page.');
+        titleEl.textContent = 'تم الإرسال! جاري التحويل...';
+      } else {
+        console.warn('⚠️ Email unconfirmed but redirecting to avoid user being stuck.');
+        titleEl.textContent = 'جاري التحويل...';
+      }
+
+      // ── Step 4: Redirect — only reaches here after email is done (or timed out)
+      window.location.href = 'payment.html?status=success';
     }
 
     function showCancelled() {

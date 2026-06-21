@@ -9,6 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
+
 // Load .env
 $envPath = __DIR__ . '/.env';
 if (file_exists($envPath)) {
@@ -34,7 +35,8 @@ if ($base_dir === '/' || $base_dir === '\\') {
 }
 $current_url = $protocol . "://" . $host . $base_dir;
 
-$PUBLIC_BASE_URL = $_ENV['PUBLIC_BASE_URL'] ?? $current_url;
+$isLocal = (strpos($host, 'localhost') !== false || strpos($host, '127.0.0.1') !== false);
+$PUBLIC_BASE_URL = $isLocal ? $current_url : ($_ENV['PUBLIC_BASE_URL'] ?? $current_url);
 $ZIINA_API_KEY = $_ENV['ZIINA_API_KEY'] ?? null;
 $TABBY_SECRET_KEY = $_ENV['TABBY_SECRET_KEY'] ?? null;
 $TABBY_MERCHANT_CODE = $_ENV['TABBY_MERCHANT_CODE'] ?? "AE";
@@ -173,32 +175,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (empty($p[$f])) return sendJson(400, ["message" => "Missing: $f"]);
         }
 
+        // NOTE: Emails are sent by payment-gateway.html → send-email.php directly.
+        // Do NOT send emails here to avoid duplicates.
+
         if (empty($ZIINA_API_KEY)) {
             return sendJson(200, ["test_mode" => true]);
         }
 
         $amountFils = round((float)$p['amount'] * 100);
         $payload = [
-            "amount" => $amountFils,
+            "amount"        => $amountFils,
             "currency_code" => "AED",
-            "message" => $p['service'] ?? "Over Seas Payment",
-            "success_url" => "{$PUBLIC_BASE_URL}/payment.html?status=success",
-            "cancel_url" => "{$PUBLIC_BASE_URL}/payment.html?status=cancelled",
+            "message"       => $p['service'] ?? "Over Seas Payment",
+            "success_url"   => "{$PUBLIC_BASE_URL}/payment.html?status=success",
+            "cancel_url"    => "{$PUBLIC_BASE_URL}/payment.html?status=cancelled",
         ];
 
         $res = httpRequest("{$ZIINA_API_BASE}/payment_intent", "POST", [
             "Authorization" => "Bearer {$ZIINA_API_KEY}",
-            "Content-Type" => "application/json",
-            "Accept" => "application/json"
+            "Content-Type"  => "application/json",
+            "Accept"        => "application/json"
         ], json_encode($payload));
 
         $ziinaData = $res['data'];
 
         if ($res['code'] < 200 || $res['code'] >= 300) {
             $msg = $ziinaData['message'] ?? $res['error'] ?? "Ziina error. Check your API key.";
-            if (empty($msg)) {
-                $msg = "Ziina error. Check your API key.";
-            }
+            if (empty($msg)) $msg = "Ziina error. Check your API key.";
             return sendJson(502, ["message" => $msg]);
         }
 
@@ -251,23 +254,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (empty($p[$f])) return sendJson(400, ["message" => "Missing: $f"]);
         }
 
+        // NOTE: Emails are sent by payment-gateway.html → send-email.php directly.
+        // Do NOT send emails here to avoid duplicates.
+
         if (!hasTabbyKey()) {
             return sendJson(200, ["test_mode" => true]);
         }
 
         $payload = buildTabbyPayload($p);
-        
+
         $res = httpRequest("{$TABBY_API_BASE}/api/v2/checkout", "POST", [
             "Authorization" => "Bearer {$TABBY_SECRET_KEY}",
-            "Content-Type" => "application/json",
-            "Accept" => "application/json"
+            "Content-Type"  => "application/json",
+            "Accept"        => "application/json"
         ], json_encode($payload));
 
         $tabbyData = $res['data'];
 
         if (isset($tabbyData['status']) && $tabbyData['status'] === "rejected") {
             return sendJson(200, [
-                "status" => "rejected",
+                "status"           => "rejected",
                 "rejection_reason" => extractRejectionReason($tabbyData),
             ]);
         }
